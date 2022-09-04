@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::boxed::Box;
 
-use crate::macros::{Parsed, read_value};
+use crate::macros::{read_value, Parsed};
 use convert_case::{Case, Casing};
 
 crate::macros::parsed!(GeneralMetadata {
@@ -29,6 +29,19 @@ crate::macros::parsed!(DifficultyMetadata {
     slider_tick_rate  : i8 = Empty
 });
 
+/// Manually implemented, parsed struct.
+/// Will retrieve all keys annotated in the [TimingPoints] section, following the
+/// (Hit Objects)[https://osu.ppy.sh/wiki/en/Client/File_formats/Osu_%28file_format%29#hit-objects] section within the osu documentation.
+///
+/// This, regardless of being manually implemented, still implements
+/// the [Parsed] trait, and therefore [Parsed::parse_from()] can be used.
+/// Our implementation for [TimingPointsMetadata] will do the following:
+/// - Split all of the shared hit-object related data:
+///   - x: i32
+///   - y: i32
+///   - time: i32
+///   - hit_sound: i32
+/// - All other remaining data will be manually parsed through the [TimingPoint] trait.
 struct TimingPointsMetadata {
     points: Vec<Box<dyn TimingPoint>>,
 }
@@ -39,9 +52,9 @@ impl Parsed for TimingPointsMetadata {
     }
 
     fn parse_from(section: Vec<String>) -> Self
-        where
-            Self: Sized {
-
+    where
+        Self: Sized,
+    {
         let mut points: Vec<Box<dyn TimingPoint>> = Vec::new();
 
         for line in section {
@@ -50,32 +63,37 @@ impl Parsed for TimingPointsMetadata {
             let x = spliced[0].parse::<i32>().unwrap();
             let y = spliced[1].parse::<i32>().unwrap();
             let time = spliced[2].parse::<i32>().unwrap();
-            let hit_sound = spliced[3].parse::<i8>().unwrap();
-            let extra_data = spliced[4..]
+            let ty = spliced[3].parse::<i8>().unwrap();
+            let hit_sound = spliced[4].parse::<i8>().unwrap();
+            let extra_data = spliced[5..]
                 .into_iter()
                 .map(|x| x.to_string())
                 .collect::<Vec<String>>();
 
-            points.push(
-                Box::new(CircleTimingPoint::parse_from(x, y, time, hit_sound, extra_data))
-            )
+            let parse = |i| {
+                match i {
+                    0 => CircleTimingPoint::parse_from(x, y, time, hit_sound, extra_data),
+                    _ => todo!(), // todo: implement others
+                }
+            };
+
+            points.push(Box::new(parse(ty)))
         }
 
-        Self {
-            points
-        }
+        Self { points }
     }
 }
 
 trait TimingPoint {
     fn parse_from(x: i32, y: i32, time: i32, hit_sound: i8, extra_data: Vec<String>) -> Self
-        where Self: Sized;
+    where
+        Self: Sized;
     fn get_dimension(&self) -> (i32, i32);
     fn get_time(&self) -> i32;
     fn get_type(&self) -> i8;
     fn get_hit_sound(&self) -> i8;
     fn get_object_parameters(&self) -> Vec<ObjectParam>;
-    fn get_hit_sample(&self) -> Vec<HitSample>; 
+    fn get_hit_sample(&self) -> Vec<HitSample>;
 }
 
 #[derive(Clone, Debug)]
@@ -92,7 +110,7 @@ impl TimingPoint for CircleTimingPoint {
             x,
             y,
             time,
-            hit_sound
+            hit_sound,
         }
     }
 

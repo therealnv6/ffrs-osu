@@ -28,7 +28,7 @@ macro_rules! parsed {
     => {
         #[derive(PartialEq, Debug)]
         pub struct $src_name {
-            $( 
+            $(
                 pub $attr_name : Option<$attr_type>
             ),*
         }
