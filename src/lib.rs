@@ -5,6 +5,7 @@ mod macros;
 mod tests {
     use crate::data::GeneralMetadata;
     use crate::macros::Parsed;
+    use std::num::ParseIntError;
 
     #[test]
     fn it_works() {
@@ -25,8 +26,9 @@ mod tests {
             .collect(),
         );
 
+        assert!(metadata.is_ok());
         assert_eq!(
-            metadata,
+            metadata.unwrap(),
             GeneralMetadata {
                 audio_file_name: Some("Niko - Made of Fire.mp3".to_owned()),
                 audio_lead_in: Some(1000),

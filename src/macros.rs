@@ -1,8 +1,17 @@
+#[derive(Debug)]
+pub struct ParseError;
+
 pub trait Parsed {
-    fn parse_from(section: Vec<String>) -> Self
+    fn parse_from(section: Vec<String>) -> Result<Self, ParseError>
     where
         Self: Sized;
     fn is_section_id(id: String) -> bool;
+}
+
+pub trait FieldParser<T> {
+    fn parse_field(&self) -> Result<T, ParseError>
+    where
+        T: Sized;
 }
 
 pub fn read_value<T>(lines: Vec<String>, mut closure: T) -> Option<String>
@@ -21,6 +30,28 @@ where
     };
 }
 
+macro_rules! field_parser {
+    ( $type:ty ) => {
+        impl FieldParser<$type> for String {
+            fn parse_field(&self) -> Result<$type, ParseError>
+            where
+                Self: Sized,
+            {
+                return self.parse().map_err(|_| ParseError);
+            }
+        }
+
+        impl FieldParser<$type> for &str {
+            fn parse_field(&self) -> Result<$type, ParseError>
+            where
+                Self: Sized,
+            {
+                return self.parse().map_err(|_| ParseError);
+            }
+        }
+    };
+}
+
 macro_rules! parsed {
     ( $src_name:ident {
         $( $attr_name:ident : $attr_type:ty = $attr_default:expr ),*
@@ -34,7 +65,8 @@ macro_rules! parsed {
         }
 
         impl Parsed for $src_name {
-            fn parse_from(section: Vec<String>) -> $src_name {
+            fn parse_from(section: Vec<String>) -> Result<$src_name, ParseError> {
+                Ok(
                 $src_name {
                     $( $attr_name : {
                         let default = stringify!($attr_default).to_owned();
@@ -55,7 +87,7 @@ macro_rules! parsed {
                             None
                         }
                     } ),*
-                }
+                })
             }
 
             fn is_section_id(id: String) -> bool {
@@ -65,4 +97,5 @@ macro_rules! parsed {
     };
 }
 
+pub(crate) use field_parser;
 pub(crate) use parsed;
