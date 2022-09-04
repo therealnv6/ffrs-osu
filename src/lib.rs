@@ -1,11 +1,11 @@
 mod data;
 mod macros;
+mod parsing;
 
 #[cfg(test)]
 mod tests {
     use crate::data::GeneralMetadata;
-    use crate::macros::Parsed;
-    use std::num::ParseIntError;
+    use crate::parsing::Parsed;
 
     #[test]
     fn it_works() {

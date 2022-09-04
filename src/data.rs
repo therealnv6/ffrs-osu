@@ -1,9 +1,9 @@
 use crate::data::timing_point::TimingPoint;
-use crate::macros::{field_parser, FieldParser, ParseError};
+use crate::macros::field_parser;
+use crate::parsing::{FieldParser, ParseError, Parsed};
 use std::boxed::Box;
-use std::num::ParseIntError;
 
-use crate::macros::{read_value, Parsed};
+use crate::macros::read_value;
 use convert_case::{Case, Casing};
 
 crate::macros::parsed!(GeneralMetadata {
@@ -96,9 +96,8 @@ impl Parsed for TimingPointsMetadata {
 }
 
 mod timing_point {
-    use crate::macros::ParseError;
-    use crate::macros::FieldParser;
-        
+    use crate::parsing::{FieldParser, ParseError};
+
     pub trait TimingPoint {
         fn parse_from(
             x: i32,
