@@ -79,16 +79,20 @@ impl Parsed for TimingPointsMetadata {
                 .map(|x| x.to_string())
                 .collect::<Vec<String>>();
 
-            let parse = |i| {
-                match i {
-                    0 => crate::data::timing_point::CircleTimingPoint::parse_from(
-                        x, y, time, hit_sound, extra_data,
-                    ),
-                    _ => todo!(), // todo: implement others
-                }
+            let point: Box<dyn crate::data::timing_point::TimingPoint> = match ty {
+                0 => Box::new(crate::data::timing_point::CircleTimingPoint::parse_from(
+                    x, y, time, hit_sound, extra_data,
+                )?),
+                1 => Box::new(crate::data::timing_point::SliderTimingPoint::parse_from(
+                    x, y, time, hit_sound, extra_data,
+                )?),
+                3 => Box::new(crate::data::timing_point::SpinnerTimingPoint::parse_from(
+                    x, y, time, hit_sound, extra_data,
+                )?),
+                _ => return Err(ParseError)
             };
 
-            points.push(Box::new(parse(ty)?))
+            points.push(point);
         }
 
         Ok(Self { points })
@@ -130,18 +134,26 @@ mod timing_point {
         y: i32,
         time: i32,
         hit_sound: i8,
-        curve_type: i8,
-        curve_points: Vec<CurvePoint>,
-        slides: i8,
-        length: f32,
-        edge_sounds: Vec<i8>,
-        edge_sets: Vec<String>,
+        pub curve_type: i8,
+        pub curve_points: Vec<CurvePoint>,
+        pub slides: i8,
+        pub length: f32,
+        pub edge_sounds: Vec<i8>,
+        pub edge_sets: Vec<String>,
+    }
+
+    pub struct SpinnerTimingPoint {
+        x: i32,
+        y: i32,
+        time: i32,
+        hit_sound: i8,
+        pub end_time: i32,
     }
 
     #[derive(Clone, Debug)]
     pub struct CurvePoint {
-        x: i32,
-        y: i32,
+        pub x: i32,
+        pub y: i32,
     }
 
     impl CurvePoint {
@@ -156,6 +168,50 @@ mod timing_point {
             let y: i32 = split[1].parse_field()?;
 
             Ok(Self { x, y })
+        }
+    }
+
+    impl TimingPoint for SpinnerTimingPoint {
+        fn parse_from(
+            x: i32,
+            y: i32,
+            time: i32,
+            hit_sound: i8,
+            extra_data: Vec<String>,
+        ) -> Result<Self, ParseError> {
+            let end_time: i32 = extra_data[0].parse_field()?;
+
+            return Ok(Self {
+                x,
+                y,
+                time,
+                hit_sound,
+                end_time,
+            });
+        }
+
+        fn get_dimension(&self) -> (i32, i32) {
+            return (self.x, self.y);
+        }
+
+        fn get_hit_sample(&self) -> Vec<HitSample> {
+            return vec![];
+        }
+
+        fn get_hit_sound(&self) -> i8 {
+            return self.hit_sound;
+        }
+
+        fn get_object_parameters(&self) -> Vec<ObjectParam> {
+            return vec![];
+        }
+
+        fn get_time(&self) -> i32 {
+            return self.time;
+        }
+
+        fn get_type(&self) -> i8 {
+            return 3;
         }
     }
 
@@ -188,6 +244,12 @@ mod timing_point {
                 y,
                 time,
                 hit_sound,
+                curve_type,
+                curve_points,
+                slides,
+                length,
+                edge_sounds: vec![],
+                edge_sets: vec![],
             })
         }
 
