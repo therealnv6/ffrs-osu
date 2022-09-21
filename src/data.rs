@@ -1,34 +1,32 @@
-use crate::data::timing_point::TimingPoint;
 use crate::macros::field_parser;
 use crate::parsing::{FieldParser, ParseError, Parsed};
-use std::boxed::Box;
 
 use crate::macros::read_value;
 use convert_case::{Case, Casing};
 
 crate::macros::parsed!(GeneralMetadata {
-    audio_file_name    : String = AudioFilename,
-    audio_lead_in      : i64    = Empty,
-    preview_time       : i64    = Empty,
-    countdown          : i8     = Empty,
-    sample_set         : String = Empty,
-    stack_leniency     : f32    = Empty,
-    mode               : i8     = Empty,
-    letterbox_in_breaks: i8     = Empty
+    audio_file_name: String = AudioFilename,
+    audio_lead_in: i64 = Empty,
+    preview_time: i64 = Empty,
+    countdown: i8 = Empty,
+    sample_set: String = Empty,
+    stack_leniency: f32 = Empty,
+    mode: i8 = Empty,
+    letterbox_in_breaks: i8 = Empty
 });
 
 crate::macros::parsed!(EditorMetadata {
     distance_spacing: f32 = Empty,
-    beat_divisor    : i8  = Empty,
-    grid_size       : i8  = Empty
+    beat_divisor: i8 = Empty,
+    grid_size: i8 = Empty
 });
 
 crate::macros::parsed!(DifficultyMetadata {
-    hp_drain_rate     : i8 = Empty,
-    circle_size       : i8 = Empty,
+    hp_drain_rate: i8 = Empty,
+    circle_size: i8 = Empty,
     overall_difficulty: i8 = Empty,
-    slider_multiplier : i8 = Empty,
-    slider_tick_rate  : i8 = Empty
+    slider_multiplier: i8 = Empty,
+    slider_tick_rate: i8 = Empty
 });
 
 field_parser!(i64);
@@ -52,7 +50,7 @@ field_parser!(f64);
 ///   - hit_sound: i32
 /// - All other remaining data will be manually parsed through the [TimingPoint] trait.
 struct TimingPointsMetadata {
-    points: Vec<Box<dyn crate::data::timing_point::TimingPoint>>,
+    points: Vec<timing_point::TimingPoint>,
 }
 
 impl Parsed for TimingPointsMetadata {
@@ -64,7 +62,7 @@ impl Parsed for TimingPointsMetadata {
     where
         Self: Sized,
     {
-        let mut points: Vec<Box<dyn crate::data::timing_point::TimingPoint>> = Vec::new();
+        let mut points: Vec<timing_point::TimingPoint> = Vec::new();
 
         for line in section {
             let spliced = line.split(",").collect::<Vec<&str>>();
@@ -79,20 +77,7 @@ impl Parsed for TimingPointsMetadata {
                 .map(|x| x.to_string())
                 .collect::<Vec<String>>();
 
-            let point: Box<dyn crate::data::timing_point::TimingPoint> = match ty {
-                0 => Box::new(crate::data::timing_point::CircleTimingPoint::parse_from(
-                    x, y, time, hit_sound, extra_data,
-                )?),
-                1 => Box::new(crate::data::timing_point::SliderTimingPoint::parse_from(
-                    x, y, time, hit_sound, extra_data,
-                )?),
-                3 => Box::new(crate::data::timing_point::SpinnerTimingPoint::parse_from(
-                    x, y, time, hit_sound, extra_data,
-                )?),
-                _ => return Err(ParseError)
-            };
-
-            points.push(point);
+            points.push(timing_point::parse(x, y, time, ty, hit_sound, extra_data)?);
         }
 
         Ok(Self { points })
@@ -102,52 +87,92 @@ impl Parsed for TimingPointsMetadata {
 mod timing_point {
     use crate::parsing::{FieldParser, ParseError};
 
-    pub trait TimingPoint {
-        fn parse_from(
+    pub enum TimingPoint {
+        Circle {
             x: i32,
             y: i32,
             time: i32,
             hit_sound: i8,
-            extra_data: Vec<String>,
-        ) -> Result<Self, ParseError>
-        where
-            Self: Sized;
-        fn get_dimension(&self) -> (i32, i32);
-        fn get_time(&self) -> i32;
-        fn get_type(&self) -> i8;
-        fn get_hit_sound(&self) -> i8;
-        fn get_object_parameters(&self) -> Vec<ObjectParam>;
-        fn get_hit_sample(&self) -> Vec<HitSample>;
+        },
+        Slider {
+            x: i32,
+            y: i32,
+            time: i32,
+            hit_sound: i8,
+            curve_type: i8,
+            curve_points: Vec<CurvePoint>,
+            slides: i8,
+            length: f32,
+            edge_sounds: Vec<i8>,
+            edge_sets: Vec<String>,
+        },
+        Spinner {
+            x: i32,
+            y: i32,
+            time: i32,
+            hit_sound: i8,
+            end_time: i32,
+        },
     }
 
-    #[derive(Clone, Debug)]
-    pub struct CircleTimingPoint {
+    pub fn parse(
         x: i32,
         y: i32,
         time: i32,
+        ty: i8,
         hit_sound: i8,
-    }
+        extra_data: Vec<String>,
+    ) -> Result<TimingPoint, ParseError> {
+        Ok(match ty {
+            0 => TimingPoint::Circle {
+                x,
+                y,
+                time,
+                hit_sound,
+            },
+            1 => {
+                let first_pipe = extra_data[0]
+                    .split("|")
+                    .into_iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<String>>();
 
-    #[derive(Clone, Debug)]
-    pub struct SliderTimingPoint {
-        x: i32,
-        y: i32,
-        time: i32,
-        hit_sound: i8,
-        pub curve_type: i8,
-        pub curve_points: Vec<CurvePoint>,
-        pub slides: i8,
-        pub length: f32,
-        pub edge_sounds: Vec<i8>,
-        pub edge_sets: Vec<String>,
-    }
+                let curve_type = first_pipe[0].parse_field()?;
+                let curve_points = first_pipe[1..]
+                    .into_iter()
+                    .map(CurvePoint::parse)
+                    .flatten()
+                    .collect::<Vec<CurvePoint>>();
 
-    pub struct SpinnerTimingPoint {
-        x: i32,
-        y: i32,
-        time: i32,
-        hit_sound: i8,
-        pub end_time: i32,
+                let slides = extra_data[1].parse_field()?;
+                let length = extra_data[2].parse_field()?;
+
+                TimingPoint::Slider {
+                    x,
+                    y,
+                    time,
+                    hit_sound,
+                    curve_type,
+                    curve_points,
+                    slides,
+                    length,
+                    edge_sounds: vec![],
+                    edge_sets: vec![],
+                }
+            }
+            2 => {
+                let end_time: i32 = extra_data[0].parse_field()?;
+
+                TimingPoint::Spinner {
+                    x,
+                    y,
+                    time,
+                    hit_sound,
+                    end_time,
+                }
+            }
+            _ => Err(ParseError)?,
+        })
     }
 
     #[derive(Clone, Debug)]
@@ -170,155 +195,4 @@ mod timing_point {
             Ok(Self { x, y })
         }
     }
-
-    impl TimingPoint for SpinnerTimingPoint {
-        fn parse_from(
-            x: i32,
-            y: i32,
-            time: i32,
-            hit_sound: i8,
-            extra_data: Vec<String>,
-        ) -> Result<Self, ParseError> {
-            let end_time: i32 = extra_data[0].parse_field()?;
-
-            return Ok(Self {
-                x,
-                y,
-                time,
-                hit_sound,
-                end_time,
-            });
-        }
-
-        fn get_dimension(&self) -> (i32, i32) {
-            return (self.x, self.y);
-        }
-
-        fn get_hit_sample(&self) -> Vec<HitSample> {
-            return vec![];
-        }
-
-        fn get_hit_sound(&self) -> i8 {
-            return self.hit_sound;
-        }
-
-        fn get_object_parameters(&self) -> Vec<ObjectParam> {
-            return vec![];
-        }
-
-        fn get_time(&self) -> i32 {
-            return self.time;
-        }
-
-        fn get_type(&self) -> i8 {
-            return 3;
-        }
-    }
-
-    impl TimingPoint for SliderTimingPoint {
-        fn parse_from(
-            x: i32,
-            y: i32,
-            time: i32,
-            hit_sound: i8,
-            data: Vec<String>,
-        ) -> Result<Self, ParseError> {
-            let first_pipe = data[0]
-                .split("|")
-                .into_iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<String>>();
-
-            let curve_type = first_pipe[0].parse_field()?;
-            let curve_points = first_pipe[1..]
-                .into_iter()
-                .map(CurvePoint::parse)
-                .flatten()
-                .collect::<Vec<CurvePoint>>();
-
-            let slides = data[1].parse_field()?;
-            let length = data[2].parse_field()?;
-
-            Ok(Self {
-                x,
-                y,
-                time,
-                hit_sound,
-                curve_type,
-                curve_points,
-                slides,
-                length,
-                edge_sounds: vec![],
-                edge_sets: vec![],
-            })
-        }
-
-        fn get_dimension(&self) -> (i32, i32) {
-            return (self.x, self.y);
-        }
-
-        fn get_hit_sample(&self) -> Vec<HitSample> {
-            return vec![];
-        }
-
-        fn get_hit_sound(&self) -> i8 {
-            return self.hit_sound;
-        }
-
-        fn get_object_parameters(&self) -> Vec<ObjectParam> {
-            return vec![];
-        }
-
-        fn get_time(&self) -> i32 {
-            return self.time;
-        }
-
-        fn get_type(&self) -> i8 {
-            return 0;
-        }
-    }
-
-    impl TimingPoint for CircleTimingPoint {
-        fn parse_from(
-            x: i32,
-            y: i32,
-            time: i32,
-            hit_sound: i8,
-            _: Vec<String>,
-        ) -> Result<Self, ParseError> {
-            Ok(Self {
-                x,
-                y,
-                time,
-                hit_sound,
-            })
-        }
-
-        fn get_dimension(&self) -> (i32, i32) {
-            return (self.x, self.y);
-        }
-
-        fn get_hit_sample(&self) -> Vec<HitSample> {
-            return vec![];
-        }
-
-        fn get_hit_sound(&self) -> i8 {
-            return self.hit_sound;
-        }
-
-        fn get_object_parameters(&self) -> Vec<ObjectParam> {
-            return vec![];
-        }
-
-        fn get_time(&self) -> i32 {
-            return self.time;
-        }
-
-        fn get_type(&self) -> i8 {
-            return 0;
-        }
-    }
-
-    pub struct ObjectParam;
-    pub struct HitSample;
 }
