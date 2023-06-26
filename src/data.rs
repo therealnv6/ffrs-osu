@@ -36,26 +36,13 @@ field_parser!(i8);
 field_parser!(f32);
 field_parser!(f64);
 
-/// Manually implemented, parsed struct.
-/// Will retrieve all keys annotated in the [TimingPoints] section, following the
-/// (Hit Objects)[https://osu.ppy.sh/wiki/en/Client/File_formats/Osu_%28file_format%29#hit-objects] section within the osu documentation.
-///
-/// This, regardless of being manually implemented, still implements
-/// the [Parsed] trait, and therefore [Parsed::parse_from()] can be used.
-/// Our implementation for [TimingPointsMetadata] will do the following:
-/// - Split all of the shared hit-object related data:
-///   - x: i32
-///   - y: i32
-///   - time: i32
-///   - hit_sound: i32
-/// - All other remaining data will be manually parsed through the [TimingPoint] trait.
 struct TimingPointsMetadata {
     points: Vec<timing_point::TimingPoint>,
 }
 
 impl Parsed for TimingPointsMetadata {
     fn is_section_id(id: String) -> bool {
-        return id == "[TimingPoints]";
+        id == "[TimingPoints]"
     }
 
     fn parse_from(section: Vec<String>) -> Result<Self, ParseError>
@@ -73,8 +60,8 @@ impl Parsed for TimingPointsMetadata {
             let ty: i8 = spliced[3].parse_field()?;
             let hit_sound: i8 = spliced[4].parse_field()?;
             let extra_data = spliced[5..]
-                .into_iter()
-                .map(|x| x.to_string())
+                .iter()
+                .map(|&x| x.to_string())
                 .collect::<Vec<String>>();
 
             points.push(timing_point::parse(x, y, time, ty, hit_sound, extra_data)?);
@@ -123,31 +110,30 @@ mod timing_point {
         hit_sound: i8,
         extra_data: Vec<String>,
     ) -> Result<TimingPoint, ParseError> {
-        Ok(match ty {
-            0 => TimingPoint::Circle {
+        match ty {
+            0 => Ok(TimingPoint::Circle {
                 x,
                 y,
                 time,
                 hit_sound,
-            },
+            }),
             1 => {
                 let first_pipe = extra_data[0]
                     .split("|")
-                    .into_iter()
                     .map(|x| x.to_string())
                     .collect::<Vec<String>>();
 
                 let curve_type = first_pipe[0].parse_field()?;
                 let curve_points = first_pipe[1..]
-                    .into_iter()
-                    .map(CurvePoint::parse)
-                    .flatten()
-                    .collect::<Vec<CurvePoint>>();
+                    .iter()
+                    .cloned()
+                    .map(|x| CurvePoint::parse(x))
+                    .collect::<Result<Vec<CurvePoint>, ParseError>>()?;
 
                 let slides = extra_data[1].parse_field()?;
                 let length = extra_data[2].parse_field()?;
 
-                TimingPoint::Slider {
+                Ok(TimingPoint::Slider {
                     x,
                     y,
                     time,
@@ -158,21 +144,21 @@ mod timing_point {
                     length,
                     edge_sounds: vec![],
                     edge_sets: vec![],
-                }
+                })
             }
             2 => {
                 let end_time: i32 = extra_data[0].parse_field()?;
 
-                TimingPoint::Spinner {
+                Ok(TimingPoint::Spinner {
                     x,
                     y,
                     time,
                     hit_sound,
                     end_time,
-                }
+                })
             }
-            _ => Err(ParseError)?,
-        })
+            _ => Err(ParseError),
+        }
     }
 
     #[derive(Clone, Debug)]
@@ -182,10 +168,9 @@ mod timing_point {
     }
 
     impl CurvePoint {
-        fn parse(str: &String) -> Result<Self, ParseError> {
+        fn parse(str: String) -> Result<Self, ParseError> {
             let split = str
                 .split(":")
-                .into_iter()
                 .map(|x| x.to_string())
                 .collect::<Vec<String>>();
 
